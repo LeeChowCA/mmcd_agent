@@ -19,6 +19,11 @@ class Citation(BaseModel):
     url: Optional[str] = None
     label: Optional[str] = None
     page: Optional[int] = None
+    source_id: Optional[str] = None
+    page_id: Optional[str] = None
+    source_file: Optional[str] = None
+    excerpt: Optional[str] = None
+    matched_text: Optional[str] = None
     score: Optional[float] = None
 
 

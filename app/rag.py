@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Iterable, List, Sequence
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -8,6 +9,76 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from .config import get_settings
 from .llm import chat_model, embed_text
 from .supabase_index import PageNode, index
+
+
+def _normalize_space(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _tokenize(value: str) -> List[str]:
+    return re.findall(r"[a-z0-9]+(?:\.[a-z0-9]+)*", value.lower())
+
+
+def _clip_excerpt(text: str, start: int, length: int, max_chars: int) -> str:
+    if len(text) <= max_chars:
+        return text
+
+    half = max_chars // 2
+    left = max(0, start - half)
+    right = min(len(text), start + length + half)
+
+    if right - left < max_chars:
+        if left == 0:
+            right = min(len(text), max_chars)
+        elif right == len(text):
+            left = max(0, len(text) - max_chars)
+
+    prefix = "..." if left > 0 else ""
+    suffix = "..." if right < len(text) else ""
+    return f"{prefix}{text[left:right].strip()}{suffix}"
+
+
+def _expand_match_window(text: str, index: int, token_length: int, radius: int = 56) -> str:
+    left = max(0, index - radius)
+    right = min(len(text), index + token_length + radius)
+    window = text[left:right].strip()
+    return _normalize_space(window)
+
+
+def _build_citation_snippet(question: str, content: str, max_chars: int = 260) -> tuple[str, str | None]:
+    text = _normalize_space(content)
+    if not text:
+        return "", None
+
+    normalized_question = _normalize_space(question)
+    lower_text = text.lower()
+    lower_question = normalized_question.lower()
+
+    if normalized_question and lower_question in lower_text:
+        index = lower_text.index(lower_question)
+        matched_text = text[index : index + len(normalized_question)]
+        return _clip_excerpt(text, index, len(normalized_question), max_chars), matched_text
+
+    best_index = -1
+    best_token = ""
+    for token in _tokenize(question):
+        if len(token) < 3:
+            continue
+        token_index = lower_text.find(token)
+        if token_index == -1:
+            continue
+        if len(token) > len(best_token):
+            best_index = token_index
+            best_token = token
+
+    if best_index >= 0 and best_token:
+        matched_text = _expand_match_window(text, best_index, len(best_token))
+        return _clip_excerpt(text, best_index, len(best_token), max_chars), matched_text
+
+    fallback = text[:max_chars].strip()
+    if len(text) > max_chars:
+        fallback = f"{fallback}..."
+    return fallback, None
 
 
 def build_context_block(nodes: Sequence[PageNode], max_chars: int) -> str:
@@ -22,15 +93,21 @@ def build_context_block(nodes: Sequence[PageNode], max_chars: int) -> str:
     return "\n\n".join(lines)
 
 
-def citations_from_nodes(nodes: Sequence[PageNode]) -> List[dict]:
+def citations_from_nodes(nodes: Sequence[PageNode], question: str) -> List[dict]:
     citations: List[dict] = []
     for idx, node in enumerate(nodes, start=1):
+        excerpt, matched_text = _build_citation_snippet(question, node.content)
         citations.append(
             {
                 "id": idx,
                 "label": node.label,
                 "url": node.url,
                 "page": node.page_number,
+                "source_id": node.source_id,
+                "page_id": node.page_id,
+                "source_file": node.source_file,
+                "excerpt": excerpt,
+                "matched_text": matched_text,
                 "score": node.score,
             }
         )

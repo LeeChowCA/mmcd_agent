@@ -5,7 +5,7 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from .config import get_settings
 from .graph import AgentState, build_graph
@@ -60,6 +60,12 @@ def ask(body: ChatRequest):
     )
 
 
+@app.get('/graph/png')
+def get_graph_png() -> Response:
+    png_bytes = graph.get_graph().draw_mermaid_png()
+    return Response(content=png_bytes, media_type="image/png")
+
+
 @app.post("/api/ask/stream")
 async def ask_stream(body: ChatRequest):
     question = _last_user_question(body.messages)
@@ -67,7 +73,7 @@ async def ask_stream(body: ChatRequest):
         return JSONResponse({"error": "No user question provided."}, status_code=400)
 
     nodes = retrieve(question, k=settings.top_k)
-    citations = citations_from_nodes(nodes)
+    citations = citations_from_nodes(nodes, question)
 
     async def event_stream() -> AsyncGenerator[bytes, None]:
         try:

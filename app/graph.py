@@ -23,7 +23,7 @@ def _retrieve_node(state: AgentState) -> AgentState:
     settings = get_settings()
     nodes = retrieve(state.question, k=settings.top_k)
     state.contexts = nodes
-    state.citations = citations_from_nodes(nodes)
+    state.citations = citations_from_nodes(nodes, state.question)
     return state
 
 

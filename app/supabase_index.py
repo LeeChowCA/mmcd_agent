@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
+from urllib.parse import quote
 
 import httpx
 import numpy as np
@@ -18,6 +20,7 @@ class PageNode:
     document_id: str | None
     content: str
     source_file: str
+    source_id: str
     url: str
     label: str
     embedding: np.ndarray
@@ -77,6 +80,13 @@ class SupabaseIndex:
             return "Document"
         return base.replace("_", " ").replace("-", " ").strip().title()
 
+    @staticmethod
+    def _to_source_id(source_file: str) -> str:
+        base = source_file.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+        base = base.rsplit(".", 1)[0] if "." in base else base
+        slug = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")
+        return slug or "document"
+
     def _hydrate(self) -> None:
         embeddings = self._fetch_page_embeddings()
         pages_by_id = self._fetch_document_pages()
@@ -97,8 +107,10 @@ class SupabaseIndex:
             if not source_file:
                 source_file = "document.pdf"
 
-            url = metadata.get("file_url") or f"/{source_file}#page={page_number}"
+            source_file_leaf = source_file.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+            url = metadata.get("file_url") or f"/{quote(source_file_leaf)}#page={page_number}"
             label = self._to_label(source_file)
+            source_id = self._to_source_id(source_file)
 
             nodes.append(
                 PageNode(
@@ -107,6 +119,7 @@ class SupabaseIndex:
                     page_number=page_number,
                     content=page_row.get("content") or "",
                     source_file=source_file,
+                    source_id=source_id,
                     url=url,
                     label=label,
                     embedding=embedding,
