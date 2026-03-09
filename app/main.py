@@ -32,6 +32,16 @@ def health():
     return {"ok": True, "service": "mmcd-agent"}
 
 
+@app.get("/")
+def root():
+    return {
+        "service": "mmcd-agent",
+        "ok": True,
+        "health": "/health",
+        "docs": "/docs",
+    }
+
+
 def _last_user_question(messages: list[ChatMessage]) -> str:
     for message in reversed(messages):
         if message.role == "user":
