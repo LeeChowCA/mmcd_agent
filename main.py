@@ -15,4 +15,3 @@ async def main():
 if __name__ == "__main__":
     set_trace_processors([OpenAIAgentsTracingProcessor()])
     asyncio.run(main())
-git
