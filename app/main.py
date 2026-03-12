@@ -3,14 +3,22 @@ from __future__ import annotations
 import json
 from typing import AsyncGenerator
 
-from fastapi import FastAPI, HTTPException
+import httpx
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from .config import get_settings
 from .graph import AgentState, build_graph
 from .rag import citations_from_nodes, generate_followups, retrieve, stream_answer
-from .schemas import AgentResponse, ChatRequest, ChatMessage
+from .schemas import (
+    AgentResponse,
+    ChatRequest,
+    ChatMessage,
+    VoiceSpeechRequest,
+    VoiceTranscriptionResponse,
+)
+from .speech import synthesize_speech, transcribe_audio
 from .supabase_index import index
 
 settings = get_settings()
@@ -39,6 +47,10 @@ def root():
         "ok": True,
         "health": "/health",
         "docs": "/docs",
+        "voice": {
+            "transcribe": "/api/voice/transcribe",
+            "speak": "/api/voice/speak",
+        },
     }
 
 
@@ -111,4 +123,49 @@ async def ask_stream(body: ChatRequest):
         event_stream(),
         media_type="application/x-ndjson; charset=utf-8",
         headers={"Cache-Control": "no-cache, no-transform"},
+    )
+
+
+@app.post("/api/voice/transcribe", response_model=VoiceTranscriptionResponse)
+async def voice_transcribe(file: UploadFile = File(...)):
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio upload.")
+
+    try:
+        transcript = await transcribe_audio(
+            audio_bytes,
+            filename=file.filename or "voice-input.webm",
+            content_type=file.content_type,
+        )
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text[:500] if exc.response is not None else str(exc)
+        raise HTTPException(status_code=502, detail=f"Transcription request failed: {detail}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return VoiceTranscriptionResponse(text=transcript)
+
+
+@app.post("/api/voice/speak")
+async def voice_speak(body: VoiceSpeechRequest):
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required for speech synthesis.")
+
+    try:
+        audio_bytes, media_type = await synthesize_speech(text, voice=body.voice)
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text[:500] if exc.response is not None else str(exc)
+        raise HTTPException(status_code=502, detail=f"Speech synthesis failed: {detail}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return Response(
+        content=audio_bytes,
+        media_type=media_type,
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": 'inline; filename="agent-reply.mp3"',
+        },
     )

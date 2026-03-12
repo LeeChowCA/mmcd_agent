@@ -14,6 +14,15 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage] = Field(default_factory=list)
 
 
+class VoiceTranscriptionResponse(BaseModel):
+    text: str
+
+
+class VoiceSpeechRequest(BaseModel):
+    text: str
+    voice: str | None = None
+
+
 class Citation(BaseModel):
     id: int
     url: Optional[str] = None

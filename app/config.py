@@ -20,6 +20,17 @@ class Settings(BaseSettings):
     openai_base_url: str | None = Field(default=None, alias="OPENAI_BASE_URL")
     chat_model: str = Field(default="gpt-4o-mini")
     embedding_model: str = Field(default="text-embedding-3-small")
+    transcription_model: str = Field(default="gpt-4o-mini-transcribe")
+    speech_model: str = Field(default="gpt-4o-mini-tts")
+    speech_voice: str = Field(default="alloy")
+    speech_format: str = Field(default="mp3")
+    transcription_language: str = Field(default="en")
+    transcription_prompt: str = Field(
+        default=(
+            "This audio is about MMCD, SGC, SGC pages, specifications, sewers, roadways, "
+            "testing, commissioning, and civil construction terms."
+        )
+    )
 
     # Supabase
     supabase_url: str = Field(..., alias="SUPABASE_URL")
